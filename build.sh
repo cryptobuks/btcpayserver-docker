@@ -22,6 +22,7 @@ docker run -v "$(pwd)/Generated:/app/Generated" \
            -e "BTCPAYGEN_CRYPTO9=$BTCPAYGEN_CRYPTO9" \
            -e "BTCPAYGEN_REVERSEPROXY=$BTCPAYGEN_REVERSEPROXY" \
            -e "BTCPAYGEN_ADDITIONAL_FRAGMENTS=$BTCPAYGEN_ADDITIONAL_FRAGMENTS" \
+           -e "BTCPAYGEN_EXCLUDE_FRAGMENTS=$BTCPAYGEN_EXCLUDE_FRAGMENTS" \
            -e "BTCPAYGEN_LIGHTNING=$BTCPAYGEN_LIGHTNING" \
            -e "BTCPAYGEN_SUBNAME=$BTCPAYGEN_SUBNAME" \
            --rm $BTCPAYGEN_DOCKER_IMAGE
@@ -29,6 +30,9 @@ docker run -v "$(pwd)/Generated:/app/Generated" \
 if [ "$BTCPAYGEN_REVERSEPROXY" == "nginx" ]; then
     cp Production/nginx.tmpl Generated/nginx.tmpl
 fi
+
+[[ -f "Generated/pull-images.sh" ]] && chmod +x Generated/pull-images.sh
+[[ -f "Generated/save-images.sh" ]] && chmod +x Generated/save-images.sh
 
 if [ "$BTCPAYGEN_REVERSEPROXY" == "traefik" ]; then
     cp Traefik/traefik.toml Generated/traefik.toml

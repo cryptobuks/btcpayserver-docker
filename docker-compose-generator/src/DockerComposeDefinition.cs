@@ -10,13 +10,13 @@ namespace DockerGenerator
 {
 	public class DockerComposeDefinition
 	{
-		public List<string> Fragments
+		public HashSet<string> Fragments
 		{
 			get; set;
 		}
 		private string _Name;
 
-		public DockerComposeDefinition(string name, List<string> fragments)
+		public DockerComposeDefinition(string name, HashSet<string> fragments)
 		{
 			Fragments = fragments;
 			_Name = name;
@@ -33,7 +33,11 @@ namespace DockerGenerator
 
 		public string GetFilePath()
 		{
-			return Path.Combine(BuildOutputDirectory, $"docker-compose.{_Name}.yml");
+			return GetFilePath($"docker-compose.{_Name}.yml");
+		}
+		public string GetFilePath(string fileName)
+		{
+			return Path.Combine(BuildOutputDirectory, fileName);
 		}
 		public void Build()
 		{
@@ -55,6 +59,7 @@ namespace DockerGenerator
 					Console.WriteLine($"\t{fragment}");
 				}
 			}
+
 			var services = new List<KeyValuePair<YamlNode, YamlNode>>();
 			var volumes = new List<KeyValuePair<YamlNode, YamlNode>>();
 			var networks = new List<KeyValuePair<YamlNode, YamlNode>>();
@@ -82,8 +87,33 @@ namespace DockerGenerator
 			output.Add("services", new YamlMappingNode(Merge(services)));
 			output.Add("volumes", new YamlMappingNode(volumes));
 			output.Add("networks", new YamlMappingNode(networks));
+
+
+			var dockerImages = ((YamlMappingNode)output["services"]).Children.Select(kv => kv.Value["image"].ToString()).ToList();
+			dockerImages.Add("btcpayserver/docker-compose-builder:1.24.1");
+			dockerImages.Add("btcpayserver/docker-compose-generator:latest");
+			StringBuilder pullImageSh = new StringBuilder();
+			pullImageSh.Append($"#!/bin/bash\n\n");
+			pullImageSh.Append($"# This script is automatically generated via the docker-compose generator and can be use to pull all required docker images \n");
+			foreach (var image in dockerImages)
+			{
+				pullImageSh.Append($"docker pull $BTCPAY_DOCKER_PULL_FLAGS \"{image}\"\n");
+			}
+			var outputFile = GetFilePath("pull-images.sh");
+			File.WriteAllText(outputFile, pullImageSh.ToString());
+			Console.WriteLine($"Generated {outputFile}");
+
+			StringBuilder saveImages = new StringBuilder();
+			saveImages.Append($"#!/bin/bash\n\n");
+			saveImages.Append($"# This script is automatically generated via the docker-compose generator and can be use to save the docker images in an archive \n");
+			saveImages.Append($"# ./save-images.sh output.tar \n");
+			saveImages.Append($"docker save -o \"$1\" \\\n {string.Join(" \\\n", dockerImages.Select(o => $"\"{o}\""))}");
+			outputFile = GetFilePath("save-images.sh");
+			File.WriteAllText(outputFile, saveImages.ToString());
+			Console.WriteLine($"Generated {outputFile}");
+
 			var result = serializer.Serialize(output);
-			var outputFile = GetFilePath();
+			outputFile = GetFilePath();
 			File.WriteAllText(outputFile, result.Replace("''", ""));
 			Console.WriteLine($"Generated {outputFile}");
 			Console.WriteLine();
