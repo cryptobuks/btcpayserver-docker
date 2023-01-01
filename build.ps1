@@ -10,6 +10,7 @@ If ($BTCPAYGEN_DOCKER_IMAGE -eq "btcpayserver/docker-compose-generator:local"){
 
 docker run -v "$(Get-Location)\Generated:/app/Generated" `
            -v "$(Get-Location)\docker-compose-generator\docker-fragments:/app/docker-fragments" `
+           -v "$(Get-Location)\docker-compose-generator\crypto-definitions.json:/app/crypto-definitions.json" `
            -e "BTCPAYGEN_CRYPTO1=$BTCPAYGEN_CRYPTO1" `
            -e "BTCPAYGEN_CRYPTO2=$BTCPAYGEN_CRYPTO2" `
            -e "BTCPAYGEN_CRYPTO3=$BTCPAYGEN_CRYPTO3" `
@@ -29,10 +30,4 @@ docker run -v "$(Get-Location)\Generated:/app/Generated" `
 
 If ($BTCPAYGEN_REVERSEPROXY -eq "nginx") {
     Copy-Item ".\Production\nginx.tmpl" -Destination ".\Generated"
-}
-
-If ($BTCPAYGEN_REVERSEPROXY -eq "traefik") {
-    Copy-Item ".\Traefik\traefik.toml" -Destination ".\Generated"
-    
-    New-Item  ".\Generated\acme.json" -type file
 }

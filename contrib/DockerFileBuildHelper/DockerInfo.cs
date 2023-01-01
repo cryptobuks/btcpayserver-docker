@@ -12,11 +12,12 @@ namespace DockerFileBuildHelper
         public string DockerHubLink { get; set; }
         public string GitLink { get; set; }
         public string GitRef { get; set; }
+        public bool SupportedByUs { get; set; }
         public Image Image { get; internal set; }
-
+        public string RawLink { get; set; }
         public string GetGithubLinkOf(string path)
         {
-            return $"https://raw.githubusercontent.com/{GitLink.Substring("https://github.com/".Length)}/{GitRef}/{path}";
+            return RawLink ?? $"https://raw.githubusercontent.com/{GitLink.Substring("https://github.com/".Length)}{(GitRef is null ? string.Empty : ("/" + GitRef))}/{path}";
         }
     }
 }

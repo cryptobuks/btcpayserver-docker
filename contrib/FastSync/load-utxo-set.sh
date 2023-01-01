@@ -11,7 +11,7 @@ set -e
 # This will download the utxo set and untar it in bitcoin's folder
 # Usage: ./load-utxo-set.sh
 # This will use the tar to load the utxo in bitcoin's folder
-# Usage: ./load-utxo-set.sh utxo-snapshot-bitcoin-mainnet-565305.tar
+# Usage: ./load-utxo-set.sh utxo-snapshot-bitcoin-mainnet-699714.tar
 
 if ! [ "$0" = "$BASH_SOURCE" ]; then
     echo "This script must not be sourced" 
@@ -28,10 +28,18 @@ if ! [[ "$NBITCOIN_NETWORK" ]]; then
     exit 1
 fi
 
+if ! [[ "$BTCPAYGEN_ADDITIONAL_FRAGMENTS" == *"opt-save-storage"* ]]; then
+  echo "Pruning must be enabled, please update BTCPAYGEN_ADDITIONAL_FRAGMENTS by running:"
+  echo ""
+  echo 'BTCPAYGEN_ADDITIONAL_FRAGMENTS="$BTCPAYGEN_ADDITIONAL_FRAGMENTS;opt-save-storage-s"'
+  echo '. btcpay-setup -i'
+  exit 1
+fi
+
 TAR_FILE="$1"
 
 if ! [[ "$UTXO_DOWNLOAD_LINK" ]]; then
-    [[ $NBITCOIN_NETWORK == "mainnet" ]] && UTXO_DOWNLOAD_LINK="http://utxosets.blob.core.windows.net/public/utxo-snapshot-bitcoin-mainnet-585333.tar"
+    [[ $NBITCOIN_NETWORK == "mainnet" ]] && UTXO_DOWNLOAD_LINK="http://utxosets.blob.core.windows.net/public/utxo-snapshot-bitcoin-mainnet-744358.tar"
     [[ $NBITCOIN_NETWORK == "testnet" ]] && UTXO_DOWNLOAD_LINK="http://utxosets.blob.core.windows.net/public/utxo-snapshot-bitcoin-testnet-1445586.tar"
 fi
 
@@ -40,7 +48,9 @@ if ! [[ "$UTXO_DOWNLOAD_LINK" ]] && ! [[ "$TAR_FILE" ]]; then
     exit 1
 fi
 
+BITCOIN_DATA_DIR="$(docker volume inspect generated_bitcoin_datadir -f "{{.Mountpoint}}" 2>/dev/null)" || \
 BITCOIN_DATA_DIR="/var/lib/docker/volumes/generated_bitcoin_datadir/_data"
+
 [ ! -d "$BITCOIN_DATA_DIR" ] && mkdir -p "$BITCOIN_DATA_DIR"
 
 if [[ "$TAR_FILE" ]]; then
@@ -56,7 +66,7 @@ cd "$TAR_DIR"
 IS_DOWNLOADED=false
 if [ ! -f "$TAR_FILE" ]; then
   echo "Downloading $UTXO_DOWNLOAD_LINK to $TAR_FILE"
-  wget "$UTXO_DOWNLOAD_LINK" -q --show-progress
+  wget "$UTXO_DOWNLOAD_LINK" -c -O $TAR_FILE.partial -q --show-progress && mv $TAR_FILE.partial $TAR_FILE
   IS_DOWNLOADED=true
 else
   echo "$TAR_FILE already exists"
@@ -93,8 +103,18 @@ if ! tar -xf "$TAR_FILE" -C "$BITCOIN_DATA_DIR"; then
 fi
 $IS_DOWNLOADED && rm -f "$TAR_FILE"
 
+BTCPAY_DATA_DIR="$(docker volume inspect generated_btcpay_datadir -f "{{.Mountpoint}}" 2>/dev/null)" || \
 BTCPAY_DATA_DIR="/var/lib/docker/volumes/generated_btcpay_datadir/_data"
+
 [ ! -d "$BTCPAY_DATA_DIR" ] && mkdir -p "$BTCPAY_DATA_DIR"
 echo "$TAR_NAME" > "$BTCPAY_DATA_DIR/FastSynced"
 
-echo "Successfully downloaded and extracted, you can run btcpay again (btcpay-up.sh)"
+echo "Successfully downloaded and extracted."
+
+if docker volume inspect generated_bitcoin_wallet_datadir &>/dev/null; then
+  echo -e '\033[33mWARNING: You need to delete your Bitcoin Core wallet before restarting with "btcpay-up.sh", or bitcoin core will fail to start.\033[0m'
+  echo -e '\033[33mDo not delete the wallet if you have any funds on it. (For example, this may be the case if you use Eclair or FullyNoded to receive funds)\033[0m'
+  echo -e '\033[33mHow to proceed: If you agree to delete your Bitcoin Core wallet, run "docker volume rm generated_bitcoin_wallet_datadir"\033[0m'
+else
+  echo "You can now run btcpay again (btcpay-up.sh)"
+fi

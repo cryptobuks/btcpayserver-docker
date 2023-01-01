@@ -9,12 +9,14 @@ then
 else
     set +e
     docker pull $BTCPAYGEN_DOCKER_IMAGE
+    docker rmi $(docker images btcpayserver/docker-compose-generator --format "{{.Tag}};{{.ID}}" | grep "^<none>" | cut -f2 -d ';') > /dev/null 2>&1
     set -e
 fi
 
 # This script will run docker-compose-generator in a container to generate the yml files
 docker run -v "$(pwd)/Generated:/app/Generated" \
            -v "$(pwd)/docker-compose-generator/docker-fragments:/app/docker-fragments" \
+           -v "$(pwd)/docker-compose-generator/crypto-definitions.json:/app/crypto-definitions.json" \
            -e "BTCPAYGEN_CRYPTO1=$BTCPAYGEN_CRYPTO1" \
            -e "BTCPAYGEN_CRYPTO2=$BTCPAYGEN_CRYPTO2" \
            -e "BTCPAYGEN_CRYPTO3=$BTCPAYGEN_CRYPTO3" \
@@ -30,6 +32,7 @@ docker run -v "$(pwd)/Generated:/app/Generated" \
            -e "BTCPAYGEN_LIGHTNING=$BTCPAYGEN_LIGHTNING" \
            -e "BTCPAYGEN_SUBNAME=$BTCPAYGEN_SUBNAME" \
            -e "BTCPAY_HOST_SSHAUTHORIZEDKEYS=$BTCPAY_HOST_SSHAUTHORIZEDKEYS" \
+           -e "EPS_XPUB=$EPS_XPUB" \
            --rm $BTCPAYGEN_DOCKER_IMAGE
 
 if [ "$BTCPAYGEN_REVERSEPROXY" == "nginx" ]; then
@@ -38,9 +41,3 @@ fi
 
 [[ -f "Generated/pull-images.sh" ]] && chmod +x Generated/pull-images.sh
 [[ -f "Generated/save-images.sh" ]] && chmod +x Generated/save-images.sh
-
-if [ "$BTCPAYGEN_REVERSEPROXY" == "traefik" ]; then
-    cp Traefik/traefik.toml Generated/traefik.toml
-    :> Generated/acme.json
-    chmod 600 Generated/acme.json
-fi

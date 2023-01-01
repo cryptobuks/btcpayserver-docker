@@ -1,5 +1,5 @@
 version: "3"
-# must not use opt-save-storage
+#  must not use opt-save-storage
 
 services:
   bitcoind:
@@ -30,3 +30,8 @@ services:
     environment:
       BITCOIN_EXTRA_ARGS: |
         txindex=1
+  nbxplorer:
+    environment:
+      NBXPLORER_BTCHASTXINDEX: 1
+incompatible:
+  - pruning

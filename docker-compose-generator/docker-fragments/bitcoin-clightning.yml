@@ -2,7 +2,7 @@ version: "3"
 
 services:
   clightning_bitcoin:
-    image: btcpayserver/lightning:v0.7.2-1
+    image: btcpayserver/lightning:v22.11.1
     container_name: btcpayserver_clightning_bitcoin
     restart: unless-stopped
     environment:
@@ -15,6 +15,8 @@ services:
       LIGHTNINGD_OPT: |
         bitcoin-datadir=/etc/bitcoin
         bitcoin-rpcconnect=bitcoind
+        experimental-offers
+        database-upgrade=true
     volumes:
       - "clightning_bitcoin_datadir:/root/.lightning"
       - "bitcoin_datadir:/etc/bitcoin"
@@ -24,12 +26,14 @@ services:
     links:
       - bitcoind
   clightning_bitcoin_charge:
-    image: shesek/lightning-charge:0.4.6-standalone
+    image: shesek/lightning-charge:0.4.23-1-standalone
     restart: unless-stopped
     environment:
       NETWORK: ${NBITCOIN_NETWORK:-regtest}
       COOKIE_FILE: /data/.cookie
       URL: ${BTCPAY_ROOTPATH:-/}lightning-charge/btc/
+      LN_NET_PATH: /etc/lightning
+      LN_NET: /etc/lightning
     volumes:
       - "clightning_bitcoin_datadir:/etc/lightning"
       - "clightning_bitcoin_charge:/data"
@@ -37,8 +41,9 @@ services:
       - "9112"
     links:
       - clightning_bitcoin
+
   clightning_bitcoin_spark:
-    image: shesek/spark-wallet:0.2.8-standalone
+    image: shesek/spark-wallet:0.3.1-standalone
     restart: unless-stopped
     environment:
       NETWORK: ${NBITCOIN_NETWORK:-regtest}
@@ -49,19 +54,66 @@ services:
     links:
       - clightning_bitcoin
     expose:
-     - "9737"
+      - "9737"
+
+  clightning_bitcoin_rest:
+    image: saubyk/c-lightning-rest:0.9.0
+    restart: unless-stopped
+    environment:
+      PROTOCOL: "http"
+      NODE: clightning_bitcoin:9835
+      LIGHTNINGD_READY_FILE: /root/.nbxplorer/btc_fully_synched
+    links:
+      - clightning_bitcoin
+    volumes:
+      - "clightning_bitcoin_datadir:/root/.lightning"
+      - "bitcoin_datadir:/etc/bitcoin"
+      - "clightning_bitcoin_rest_certsdir:/usr/src/app/certs"
+      - "nbxplorer_datadir:/root/.nbxplorer"
+    expose:
+      - "3001"
+
+  bitcoin_rtl:
+    image: shahanafarooqui/rtl:0.13.2
+    restart: unless-stopped
+    environment:
+      LN_IMPLEMENTATION: CLN
+      CONFIG_PATH: /root/.lightning/config
+      LN_SERVER_URL: http://clightning_bitcoin_rest:3001/v1
+      MACAROON_PATH: /etc/clightning_bitcoin_rest_certs
+      RTL_CONFIG_PATH: /data/
+      BITCOIND_CONFIG_PATH: /etc/bitcoin/bitcoin.conf
+      RTL_SSO: 1
+      RTL_COOKIE_PATH: /data/.cookie
+      LOGOUT_REDIRECT_LINK: /server/services
+    volumes:
+      - "clightning_bitcoin_datadir:/root/.lightning"
+      - "bitcoin_datadir:/etc/bitcoin"
+      - "clightning_bitcoin_rtl_datadir:/data"
+      - "clightning_bitcoin_rest_certsdir:/etc/clightning_bitcoin_rest_certs"
+    expose:
+      - "3000"
+
   btcpayserver:
     environment:
       BTCPAY_BTCLIGHTNING: "type=clightning;server=unix://etc/clightning_bitcoin/lightning-rpc"
       BTCPAY_BTCEXTERNALSPARK: "server=/spark/btc/;cookiefile=/etc/clightning_bitcoin_spark/.cookie"
       BTCPAY_BTCEXTERNALCHARGE: "server=/lightning-charge/btc/;cookiefilepath=/etc/clightning_bitcoin_charge/.cookie"
+      BTCPAY_BTCEXTERNALRTL: "server=/rtl/api/authenticate/cookie;cookiefile=/etc/clightning_bitcoin_rtl/.cookie"
+      BTCPAY_BTCEXTERNALCLIGHTNINGREST: "server=/clightning-rest/btc;macaroonfilepath=/etc/clightning_bitcoin_rest_certs/access.macaroon;macaroondirectorypath=/etc/clightning_bitcoin_rest_certs"
     volumes:
       - "clightning_bitcoin_datadir:/etc/clightning_bitcoin"
       - "clightning_bitcoin_spark:/etc/clightning_bitcoin_spark"
       - "clightning_bitcoin_charge:/etc/clightning_bitcoin_charge"
+      - "clightning_bitcoin_rtl_datadir:/etc/clightning_bitcoin_rtl"
+      - "clightning_bitcoin_rest_certsdir:/etc/clightning_bitcoin_rest_certs"
     links:
       - clightning_bitcoin
 volumes:
   clightning_bitcoin_datadir:
   clightning_bitcoin_spark:
   clightning_bitcoin_charge:
+  clightning_bitcoin_rtl_datadir:
+  clightning_bitcoin_rest_certsdir:
+exclusive:
+  - lightning

@@ -38,12 +38,12 @@ else
 fi
 
 # Verify we are in right folder. If we are not, let's go in the parent folder of the current docker-compose.
-if ! git -C . rev-parse &> /dev/null || [ ! -d "Generated" ]; then
+if ! git rev-parse --git-dir &> /dev/null || [ ! -d "Generated" ]; then
     if [[ ! -z $BTCPAY_DOCKER_COMPOSE ]]; then
         cd $(dirname $BTCPAY_DOCKER_COMPOSE)
         cd ..
     fi
-    if ! git -C . rev-parse || [[ ! -d "Generated" ]]; then
+    if ! git rev-parse || [[ ! -d "Generated" ]]; then
         echo "You must run this script inside the git repository of btcpayserver-docker"
         return
     fi
@@ -93,7 +93,7 @@ Environment variables:
     BTCPAYGEN_REVERSEPROXY: Whether to use or not a reverse proxy. NGinx setup HTTPS for you. (eg. nginx, traefik, none. Default: nginx)
     BTCPAYGEN_LIGHTNING: Lightning network implementation to use (eg. clightning, lnd, none)
     BTCPAYGEN_ADDITIONAL_FRAGMENTS: Semi colon separated list of additional fragments you want to use (eg. opt-save-storage)
-    ACME_CA_URI: The API endpoint to ask for HTTPS certificate (default: https://acme-v01.api.letsencrypt.org/directory)
+    ACME_CA_URI: The API endpoint to ask for HTTPS certificate (default: production)
     BTCPAY_ENABLE_SSH: Optional, gives BTCPay Server SSH access to the host by allowing it to edit authorized_keys of the host, it can be used for managing the authorized_keys or updating BTCPay Server directly through the website. (Default: false)
     BTCPAYGEN_DOCKER_IMAGE: Allows you to specify a custom docker image for the generator (Default: btcpayserver/docker-compose-generator)
     BTCPAY_IMAGE: Allows you to specify the btcpayserver docker image to use over the default version. (Default: current stable version of btcpayserver)
@@ -101,11 +101,15 @@ Environment variables:
     BTCPAY_ADDITIONAL_HOSTS: Allows you to specify additional domains to your BTCPayServer with https support if enabled. (eg. example2.com,example3.com)
 Add-on specific variables:
     LIBREPATRON_HOST: If libre patron is activated with opt-add-librepatron, the hostname of your libre patron website (eg. librepatron.example.com)
+    ZAMMAD_HOST: If zammad is activated with opt-add-zammad, the hostname of your zammad website (eg. zammad.example.com)
     WOOCOMMERCE_HOST: If woocommerce is activated with opt-add-woocommerce, the hostname of your woocommerce website (eg. store.example.com)
     BTCPAYGEN_EXCLUDE_FRAGMENTS:  Semicolon-separated list of fragments you want to forcefully exclude (eg. litecoin-clightning)
     BTCTRANSMUTER_HOST: If btc transmuter is activated with opt-add-btctransmuter, the hostname of your btc transmuter website (eg. store.example.com)
     TOR_RELAY_NICKNAME: If tor relay is activated with opt-add-tor-relay, the relay nickname
     TOR_RELAY_EMAIL: If tor relay is activated with opt-add-tor-relay, the email for Tor to contact you regarding your relay
+    CHATWOOT_HOST: If chatwoot is activated with opt-add-chatwoot, the hostname of your chatwoot website (eg. store.example.com)
+    FIREFLY_HOST: If fireflyiii is activated with opt-add-fireflyiii, the hostname of your libre patron website (eg. firefly.example.com)
+    CLOUDFLARE_TUNNEL_TOKEN: Used to expose your instance to clearnet with a Cloudflare Argo Tunnel
 END
 }
 START=""
@@ -174,13 +178,13 @@ if [ ! -z "$BTCPAY_ADDITIONAL_HOSTS" ] && [[ "$BTCPAY_ADDITIONAL_HOSTS" == *[';'
     return;
 fi
 
-if [ ! -z "$BTCPAY_ADDITIONAL_HOSTS" ] && [[ "$BTCPAY_ADDITIONAL_HOSTS" == .onion* ]]; then 
-    echo "$BTCPAY_ADDITIONAL_HOSTS should not contains onion hosts, additional hosts is only for getting https certificates, those are not available to tor addresses"
+if [ ! -z "$BTCPAY_ADDITIONAL_HOSTS" ] && [[ "$BTCPAY_ADDITIONAL_HOSTS" == .onion* ]]; then
+    echo "$BTCPAY_ADDITIONAL_HOSTS should not contain onion hosts, additional hosts is only for getting https certificates, those are not available to tor addresses"
     return;
 fi
 ######### Migration: old pregen environment to new environment ############
 if [[ ! -z $BTCPAY_DOCKER_COMPOSE ]] && [[ ! -z $DOWNLOAD_ROOT ]] && [[ -z $BTCPAYGEN_OLD_PREGEN ]]; then
-    echo "Your deployment is too old, you need to migrate by following instructions on this link https://github.com/btcpayserver/btcpayserver-docker/tree/master#i-deployed-before-btcpay-setupsh-existed-before-may-17-can-i-migrate-to-this-new-system"
+    echo "Your deployment is too old, you need to migrate by following instructions on this link https://docs.btcpayserver.org/Docker/#i-deployed-before-btcpay-setup-sh-existed-before-may-17-2018-can-i-migrate-to-this-new-system"
     return
 fi
 #########################################################
@@ -194,12 +198,14 @@ fi
 : "${BTCPAYGEN_REVERSEPROXY:=nginx}"
 : "${BTCPAYGEN_LIGHTNING:=none}"
 : "${REVERSEPROXY_DEFAULT_HOST:=none}"
-: "${ACME_CA_URI:=https://acme-v01.api.letsencrypt.org/directory}"
+: "${ACME_CA_URI:=production}"
 : "${BTCPAY_PROTOCOL:=https}"
 : "${BTCPAY_ADDITIONAL_HOSTS:=}"
 : "${REVERSEPROXY_HTTP_PORT:=80}"
 : "${REVERSEPROXY_HTTPS_PORT:=443}"
 : "${BTCPAY_ENABLE_SSH:=false}"
+: "${PIHOLE_SERVERIP:=}"
+: "${CLOUDFLARE_TUNNEL_TOKEN:=}"
 
 OLD_BTCPAY_DOCKER_COMPOSE="$BTCPAY_DOCKER_COMPOSE"
 ORIGINAL_DIRECTORY="$(pwd)"
@@ -240,7 +246,7 @@ if $BTCPAY_ENABLE_SSH && [[ "$BTCPAY_HOST_SSHAUTHORIZEDKEYS" ]]; then
         touch $BTCPAY_HOST_SSHAUTHORIZEDKEYS
     fi
     BTCPAY_SSHAUTHORIZEDKEYS="/datadir/host_authorized_keys"
-    BTCPAY_SSHKEYFILE="/datadir/host_id_rsa"
+    BTCPAY_SSHKEYFILE="/datadir/host_id_ed25519"
     use_ssh=true
 fi
 
@@ -281,8 +287,10 @@ REVERSEPROXY_HTTP_PORT:$REVERSEPROXY_HTTP_PORT
 REVERSEPROXY_HTTPS_PORT:$REVERSEPROXY_HTTPS_PORT
 REVERSEPROXY_DEFAULT_HOST:$REVERSEPROXY_DEFAULT_HOST
 LIBREPATRON_HOST:$LIBREPATRON_HOST
+ZAMMAD_HOST:$ZAMMAD_HOST
 WOOCOMMERCE_HOST:$WOOCOMMERCE_HOST
 BTCTRANSMUTER_HOST:$BTCTRANSMUTER_HOST
+CHATWOOT_HOST:$CHATWOOT_HOST
 BTCPAY_ENABLE_SSH:$BTCPAY_ENABLE_SSH
 BTCPAY_HOST_SSHKEYFILE:$BTCPAY_HOST_SSHKEYFILE
 LETSENCRYPT_EMAIL:$LETSENCRYPT_EMAIL
@@ -305,6 +313,8 @@ BTCPAY_IMAGE:$BTCPAY_IMAGE
 ACME_CA_URI:$ACME_CA_URI
 TOR_RELAY_NICKNAME: $TOR_RELAY_NICKNAME
 TOR_RELAY_EMAIL: $TOR_RELAY_EMAIL
+PIHOLE_SERVERIP: $PIHOLE_SERVERIP
+FIREFLY_HOST: $FIREFLY_HOST
 ----------------------
 Additional exported variables:
 BTCPAY_DOCKER_COMPOSE=$BTCPAY_DOCKER_COMPOSE
@@ -355,6 +365,7 @@ export BTCPAY_BASE_DIRECTORY=\"$BTCPAY_BASE_DIRECTORY\"
 export BTCPAY_ENV_FILE=\"$BTCPAY_ENV_FILE\"
 export BTCPAY_HOST_SSHKEYFILE=\"$BTCPAY_HOST_SSHKEYFILE\"
 export BTCPAY_ENABLE_SSH=$BTCPAY_ENABLE_SSH
+export PIHOLE_SERVERIP=\"$PIHOLE_SERVERIP\"
 if cat \"\$BTCPAY_ENV_FILE\" &> /dev/null; then
   while IFS= read -r line; do
     ! [[ \"\$line\" == \"#\"* ]] && [[ \"\$line\" == *\"=\"* ]] && export \"\$line\"
@@ -384,7 +395,7 @@ if ! [[ -x "$(command -v docker)" ]] || ! [[ -x "$(command -v docker-compose)" ]
             2>error
     fi
     if ! [[ -x "$(command -v docker)" ]]; then
-        if [[ "$(uname -m)" == "x86_64" ]] || [[ "$(uname -m)" == "armv7l" ]]; then
+        if [[ "$(uname -m)" == "x86_64" ]] || [[ "$(uname -m)" == "armv7l" ]] || [[ "$(uname -m)" == "aarch64" ]]; then
             if [[ "$OSTYPE" == "darwin"* ]]; then
                 # Mac OS	
                 if ! [[ -x "$(command -v brew)" ]]; then
@@ -408,28 +419,19 @@ if ! [[ -x "$(command -v docker)" ]] || ! [[ -x "$(command -v docker-compose)" ]
                 sh get-docker.sh
                 rm get-docker.sh
             fi
-        elif [[ "$(uname -m)" == "aarch64" ]]; then
-            echo "Trying to install docker for armv7 on a aarch64 board..."
-            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-            RELEASE=$(lsb_release -cs)
-            if [[ "$RELEASE" == "bionic" ]]; then
-                RELEASE=xenial
-            fi
-            if [[ -x "$(command -v dpkg)" ]]; then
-                dpkg --add-architecture armhf
-            fi
-            add-apt-repository "deb https://download.docker.com/linux/$(. /etc/os-release; echo "$ID") $RELEASE stable"
-            apt-get update -y
-            # zlib1g:armhf is needed for docker-compose, but we install it here as we changed dpkg here
-            apt-get install -y docker-ce:armhf zlib1g:armhf
+        else
+            echo "Unsupported architecture $(uname -m)"
+            return
         fi
     fi
 
+    docker_update
+
     if ! [[ -x "$(command -v docker-compose)" ]]; then
         if ! [[ "$OSTYPE" == "darwin"* ]] && $HAS_DOCKER; then
-            echo "Trying to install docker-compose by using the docker-compose-builder ($(uname -m))"
+            echo "Trying to install docker-compose by using the btcpayserver/docker-compose ($(uname -m))"
             ! [[ -d "dist" ]] && mkdir dist
-            docker run --rm -v "$(pwd)/dist:/dist" btcpayserver/docker-compose-builder:1.24.1
+            docker run --rm -v "$(pwd)/dist:/dist" btcpayserver/docker-compose:1.28.6
             mv dist/docker-compose /usr/local/bin/docker-compose
             chmod +x /usr/local/bin/docker-compose
             rm -rf "dist"
@@ -450,7 +452,12 @@ if $HAS_DOCKER; then
 fi
 
 # Generate the docker compose in BTCPAY_DOCKER_COMPOSE
-$HAS_DOCKER && . ./build.sh
+if $HAS_DOCKER; then
+    if ! ./build.sh; then
+        echo "Failed to generate the docker-compose"
+        return
+    fi
+fi
 
 if [[ "$BTCPAYGEN_OLD_PREGEN" == "true" ]]; then
     cp Generated/docker-compose.generated.yml $BTCPAY_DOCKER_COMPOSE
